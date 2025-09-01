@@ -16,7 +16,6 @@ def save_to_visualise_reranked_title_table(
 
     titles_to_add = []
     for reranked_title in titles:
-        print(reranked_title)
         row = VisualiseRerankedTitle(
             uid=uid,
             query=query,

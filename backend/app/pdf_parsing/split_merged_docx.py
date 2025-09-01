@@ -40,10 +40,7 @@ def split_merged_docx_with_formatting(input_docx_path, output_dir, paper_titles)
         if i < len(paper_titles):
             title = paper_titles[i]
         else:
-            print(
-                f"Warning: No title found for section {i + 1}, skipping this section."
-            )
-            continue  # Skip if there's no title for this section
+            continue
 
         # Create a new document for the section
         output_doc = Document()
@@ -53,9 +50,8 @@ def split_merged_docx_with_formatting(input_docx_path, output_dir, paper_titles)
             new_paragraph = output_doc.add_paragraph(paragraph.text)
             new_paragraph.style = paragraph.style  # Retain the paragraph's style
 
-        output_path = f"{output_dir}/{title}.docx"  # Use the title from paper_titles
+        output_path = f"{output_dir}/{title}.docx"
         output_doc.save(output_path)
-        print(f"Created: {output_path}")
 
 
 # Example usage:

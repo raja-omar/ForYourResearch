@@ -1,126 +1,87 @@
+"""S3 upload and PDF-to-HTML conversion via ConvertAPI."""
+
 import os
+import tempfile
+from typing import List
+
 import boto3
 import certifi
-import requests
-import io
-import tempfile
-from ..pdf_parsing import (
-    merge_pdfs,
-    convert_pdf_to_docx,
-    split_merged_docx,
-    extract_heading_content,
-    read_from_md,
-)
-from ...llm.temp_full_text_reranking import document_relevance
 import convertapi
+import requests
 
-convertapi.api_credentials = "secret_KX72qYpDwkFBPiax"
-
-# Set AWS credentials as environment variables (optional if using aws configure)
-
-os.environ["AWS_ACCESS_KEY_ID"] = "AKIASFUIRGOEJEK464CL"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "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"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-2"
+from ..core.config import get_settings
 
 
-def upload_papers_to_s3(uid: str, search_query: str, papers: list):
-
-    # Bucket name
-    bucket_name = "paper-full-texts"
-
-    # User UID folder
-    s3_folder = f"{uid}/"  # Ensure folder path ends with a slash
-
-    # Search string folder
-    search_string = f"{search_query}/"  # Ensure folder path ends with a slash
+def upload_papers_to_s3(uid: str, search_query: str, papers: list) -> None:
+    """Upload paper PDFs from open-access URLs to S3."""
+    settings = get_settings()
+    settings.configure_aws_env()
 
     s3 = boto3.client("s3")
-
-    res = []
-    # Connection Pooling so that the same connection can be used for multiple requests making it a bit faster
+    s3_prefix = f"{uid}/{search_query}/"
     session = requests.Session()
-    session.verify = certifi.where()  # Use certifi for certificate verification
+    session.verify = certifi.where()
+
     for paper in papers:
         try:
-            if paper.get("openAccessPdf"):
-                response = session.get(paper["openAccessPdf"]["url"], stream=True)
-
-                # Set the name of the pdf to paper's title
-                pdf_file_name = paper["title"] + ".pdf"
-
-                if response.status_code == 200:
-                    # Upload directly to S3 with folder structure
-                    print(f"Uploading {pdf_file_name} to S3...")
-                    s3.upload_fileobj(
-                        response.raw,
-                        bucket_name,
-                        f"{s3_folder}{search_string}{pdf_file_name}",
-                    )
-                    print(f"{pdf_file_name} was successfully uploaded to S3!")
-                    res.append("yes")
-                else:
-                    res.append("no open access")
-        except:
+            if not paper.get("openAccessPdf"):
+                continue
+            response = session.get(paper["openAccessPdf"]["url"], stream=True)
+            if response.status_code != 200:
+                continue
+            pdf_name = paper["title"] + ".pdf"
+            s3.upload_fileobj(
+                response.raw,
+                settings.s3_bucket,
+                f"{s3_prefix}{pdf_name}",
+            )
+        except (requests.RequestException, OSError):
             continue
 
 
-def convert_pdf_to_html(pdf_name, pdf_path, html_path):
-    # Create the HTML path if it doesn't exist
-    os.makedirs(html_path, exist_ok=True)
+def convert_pdf_to_html(pdf_name: str, pdf_path: str, html_path: str) -> None:
+    """Convert a PDF to HTML using ConvertAPI."""
+    settings = get_settings()
+    convertapi.api_credentials = settings.convertapi_credentials
 
-    # Convert the PDF to HTML and save to the specified path
+    os.makedirs(html_path, exist_ok=True)
     convertapi.convert(
         "html", {"File": pdf_path, "Wysiwyg": "false"}, from_format="pdf"
     ).save_files(f"{html_path}/{pdf_name}.html")
-    print(f"Converted {pdf_name}.pdf to {pdf_name}.html and saved to {html_path}")
 
 
-def read_pdfs_from_s3(uid: str, search_query: str, html_output_path: str):
-    import boto3
-    import os
-    import tempfile
+def read_pdfs_from_s3(
+    uid: str, search_query: str, html_output_path: str
+) -> List[str]:
+    """Download PDFs from S3, convert to HTML, return list of paper titles."""
+    settings = get_settings()
+    settings.configure_aws_env()
 
-    # Bucket name
-    bucket_name = "paper-full-texts"
     s3 = boto3.client("s3")
     s3_prefix = f"{uid}/{search_query}/"
-    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=s3_prefix)
+    response = s3.list_objects_v2(Bucket=settings.s3_bucket, Prefix=s3_prefix)
 
     if "Contents" not in response:
-        print("No PDFs found for the given uid and search_query.")
         return []
 
-    # Create a temporary directory to store downloaded PDFs
     with tempfile.TemporaryDirectory() as temp_dir:
-        downloaded_files = []
-
+        downloaded = []
         for item in response["Contents"]:
-            pdf_file_key = item["Key"]
-
-            # Download each PDF to the temporary directory
-            temp_pdf_path = os.path.join(temp_dir, pdf_file_key.split("/")[-1])
+            key = item["Key"]
+            local_path = os.path.join(temp_dir, key.split("/")[-1])
             try:
-                with open(temp_pdf_path, "wb") as temp_pdf_file:
-                    s3.download_fileobj(bucket_name, pdf_file_key, temp_pdf_file)
+                with open(local_path, "wb") as f:
+                    s3.download_fileobj(settings.s3_bucket, key, f)
+                downloaded.append(local_path)
+            except OSError:
+                continue
 
-                downloaded_files.append(temp_pdf_path)
-                print(f"Downloaded {pdf_file_key} to {temp_pdf_path}")
-            except Exception as e:
-                print(f"Failed to download {pdf_file_key}: {e}")
-
-        # Initialize a list to store successfully converted titles
-        successful_titles = []
-
-        # Convert all downloaded PDFs to HTML
-        for pdf_path in downloaded_files:
+        successful = []
+        for pdf_path in downloaded:
             pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
             try:
-                # Attempt to convert the PDF to HTML
                 convert_pdf_to_html(pdf_name, pdf_path, html_output_path)
-                successful_titles.append(pdf_name)
-                print(f"Successfully converted {pdf_name} to HTML.")
-            except Exception as e:
-                print(f"Failed to convert {pdf_name} to HTML: {e}")
-
-        print(f"All PDFs processed. Successfully converted titles: {successful_titles}")
-        return successful_titles
+                successful.append(pdf_name)
+            except Exception:
+                continue
+        return successful

@@ -9,8 +9,8 @@ def create_header_page(text, output_path):
         c = canvas.Canvas(output_path, pagesize=letter)
         c.drawString(100, 750, text)
         c.save()
-    except Exception as e:
-        print(f"Error creating header page: {e}")
+    except Exception:
+        pass
 
 
 def merge_pdfs_with_headers(folder_path, output_path, uid, search_query):
@@ -29,18 +29,13 @@ def merge_pdfs_with_headers(folder_path, output_path, uid, search_query):
                 create_header_page(
                     f"Start of PDF Naman_Omar {pdf_counter}", header_path
                 )
-                print(f"Adding header: {header_path}")
                 merger.append(header_path)
-
-                # Add the actual PDF
                 pdf_path = os.path.join(folder_path, item)
-                print(f"Adding PDF: {pdf_path}")
                 merger.append(pdf_path)
-                item.replace(".html", "")
                 pdf_counter += 1
-                paper_titles.append(item)
-            except Exception as e:
-                print(f"Error processing {item}: {e}")
+                paper_titles.append(os.path.splitext(item)[0])
+            except Exception:
+                continue
 
     # Define the final output PDF path
     final_output_path = os.path.join(output_path, f"{uid} - {search_query}.pdf")
@@ -48,9 +43,8 @@ def merge_pdfs_with_headers(folder_path, output_path, uid, search_query):
         merger.write(final_output_path)
         merger.close()
         return paper_titles
-        print(f"Merged PDF with headers saved to {final_output_path}")
     except Exception as e:
-        print(f"Error writing merged PDF: {e}")
+        raise RuntimeError(f"Error writing merged PDF: {e}") from e
 
 
 # if __name__ == "__main__":

@@ -27,7 +27,6 @@ def save_query(db: Session, search_create: SearchCreate):
     row = SearchSchema(uid=search_create.uid, search_query=unique_search_query)
     db.add(row)
     db.commit()
-    print("storing")
     db.refresh(row)
     return row
 

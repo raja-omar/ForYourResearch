@@ -38,7 +38,6 @@ def convert_folder_docx_to_md(docx_folder, md_folder):
 
             headings_with_content = extract_headings_with_content(docx_path)
             save_to_markdown(headings_with_content, markdown_path)
-            print(f"Converted {filename} to {markdown_filename}")
 
 
 # Paths for input folder and output folder

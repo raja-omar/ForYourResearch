@@ -45,7 +45,7 @@ def save_to_library(
     a number next to the query like we do in firebase.
     """
     search_row = SearchCreate(
-        uid=request_model.uid, search_query=request_model.searchQuery, db=db
+        uid=request_model.uid, search_query=request_model.searchQuery
     )
     row_ref = library_operations.save_query(search_create=search_row, db=db)
 
